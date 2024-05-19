@@ -151,8 +151,6 @@ def compute_rpu(ifreq, grd, n_frame, n_feats):
     Phase reconstruction based on recurrent phase unwrapping with deep neural
     networks, IEEE Int. Conf. Acoust., Speech Signal Process. (ICASSP), May 2020.
     """
-    ifreq = ifreq[:-1, :]
-    grd = grd[:, :-1]
     grd_new = np.zeros_like(grd)
     phase = np.zeros((n_frame, n_feats))
     fd_mat = (
@@ -177,6 +175,8 @@ def get_ifreq_grd(model_tuple, logamp):
     grd = model_grd(logamp)
     ifreq = ifreq.cpu().detach().numpy().copy().squeeze()
     grd = grd.cpu().detach().numpy().copy().squeeze()
+    ifreq = ifreq[:-1, :]
+    grd = grd[:, :-1]
     return ifreq, grd
 
 
