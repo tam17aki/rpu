@@ -154,7 +154,7 @@ def compute_rpu(ifreq, grd, n_frame, n_feats):
     ifreq = ifreq[:-1, :]
     grd = grd[:, :-1]
     grd_new = np.zeros_like(grd)
-    phase_new = np.zeros((n_frame, n_feats))
+    phase = np.zeros((n_frame, n_feats))
     fd_mat = (
         -np.triu(np.ones((n_feats - 1, n_feats)), 1)
         + np.triu(np.ones((n_feats - 1, n_feats)), 2)
@@ -162,12 +162,12 @@ def compute_rpu(ifreq, grd, n_frame, n_feats):
     )
     coef = fd_mat.T @ fd_mat + np.eye(n_feats)
     for tau in range(1, n_frame):
-        phase_temp = wrap_phase(phase_new[tau - 1, :]) + ifreq[tau - 1, :]  # Eq. (10)
+        phase_temp = wrap_phase(phase[tau - 1, :]) + ifreq[tau - 1, :]  # Eq. (10)
         dwp = fd_mat @ phase_temp
         grd_new[tau, :] = dwp + wrap_phase(grd[tau, :] - dwp)  # Eq. (11)
         rhs = phase_temp + fd_mat.T @ grd_new[tau, :]
-        phase_new[tau, :] = np.linalg.solve(coef, rhs)  # Eq. (9)
-    return phase_new
+        phase[tau, :] = np.linalg.solve(coef, rhs)  # Eq. (9)
+    return phase
 
 
 def get_ifreq_grd(model_tuple, logamp):
