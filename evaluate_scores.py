@@ -41,7 +41,12 @@ from model import get_model
 
 
 def load_checkpoint(cfg: DictConfig, device):
-    """Load checkpoint."""
+    """Load checkpoint.
+
+    Args:
+        cfg (DictConfig): configuration.
+        device: device info.
+    """
     model_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.model_dir)
     model_ifreq = get_model(cfg, device)
     model_file = os.path.join(model_dir, cfg.training.model_file + ".ifreq")
@@ -55,22 +60,58 @@ def load_checkpoint(cfg: DictConfig, device):
     return model_ifreq, model_grd
 
 
+def get_wavdir(cfg):
+    """Return dirname of wavefile to be evaluated.
+
+    Args:
+        cfg (DictConfig): configuration.
+
+    Returns:
+        wav_dir (str): dirname of wavefile.
+    """
+    if cfg.demo.gla is False:
+        if cfg.demo.weighted_rpu is False:
+            wav_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", "0")
+        else:
+            wav_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.demo_dir, "wRPU", "0")
+    else:
+        if cfg.demo.weighted_rpu is False:
+            wav_dir = os.path.join(
+                cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", f"{cfg.feature.gla_iter}"
+            )
+        else:
+            wav_dir = os.path.join(
+                cfg.RPU.root_dir, cfg.RPU.demo_dir, "wRPU", f"{cfg.feature.gla_iter}"
+            )
+    return wav_dir
+
+
 def get_wavname(cfg, basename):
-    """Return filename of wavefile to be evaluate."""
+    """Return filename of wavefile to be evaluated.
+
+    Args:
+        cfg (DictConfig): configuration.
+
+    Returns:
+        wav_file (str): filename of wavefile.
+    """
     wav_name, _ = os.path.splitext(basename)
     wav_name = wav_name.split("-")[0]
-    if cfg.demo.gla is False:
-        demo_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", "0")
-    else:
-        demo_dir = os.path.join(
-            cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", f"{cfg.feature.gla_iter}"
-        )
-    wav_file = os.path.join(demo_dir, wav_name + ".wav")
+    wav_dir = get_wavdir(cfg)
+    wav_file = os.path.join(wav_dir, wav_name + ".wav")
     return wav_file
 
 
 def compute_pesq(cfg, basename):
-    """Compute PESQ and wideband PESQ."""
+    """Compute PESQ and wideband PESQ.
+
+    Args:
+        cfg (DictConfig): configuration.
+        basename (str): basename of wavefile for evaluation.
+
+    Returns:
+        PESQ (or wideband PESQ).
+    """
     eval_wav, _ = sf.read(get_wavname(cfg, basename))
     ref_wavname, _ = os.path.splitext(basename)
     ref_wavname = ref_wavname.split("-")[0]
@@ -86,7 +127,15 @@ def compute_pesq(cfg, basename):
 
 
 def compute_stoi(cfg, basename):
-    """Compute STOI and extended STOI (optional)."""
+    """Compute STOI or extended STOI (ESTOI).
+
+    Args:
+        cfg (DictConfig): configuration.
+        basename (str): basename of wavefile for evaluation.
+
+    Returns:
+        STOI (or ESTOI).
+    """
     eval_wav, _ = sf.read(get_wavname(cfg, basename))
     ref_wavname, _ = os.path.splitext(basename)
     ref_wavname = ref_wavname.split("-")[0]
@@ -102,7 +151,14 @@ def compute_stoi(cfg, basename):
 
 
 def compute_lsc(cfg, basename):
-    """Compute log-spectral convergence (LSC)."""
+    """Compute log-spectral convergence (LSC).
+
+    Args:
+        cfg (DictConfig): configuration.
+
+    Returns:
+        log-spectral convergence.
+    """
     eval_wav, _ = sf.read(get_wavname(cfg, basename))
     ref_wavname, _ = os.path.splitext(basename)
     ref_wavname = ref_wavname.split("-")[0]
@@ -129,7 +185,16 @@ def compute_lsc(cfg, basename):
 
 
 def compensate_phase(phase, win_len, n_frame):
-    """Compensate uniform linear phases."""
+    """Compensate uniform linear phases.
+
+    Args:
+        phase (ndarray): phase spectrum.
+        win_len (int): length of window.
+        n_frame (int): length of frame.
+
+    Returns:
+        phase (ndarray): compensated phaes spectrum.
+    """
     k = np.arange(0, win_len // 2 + 1)
     angle_freq = (2 * np.pi / win_len) * k * (win_len - 1) / 2
     angle_freq = np.tile(np.expand_dims(angle_freq, 0), [n_frame, 1])
@@ -138,11 +203,18 @@ def compensate_phase(phase, win_len, n_frame):
 
 
 def wrap_phase(phase):
-    """Wrap phase."""
+    """Compute wrapped phase.
+
+    Args:
+        phase: phase spectrum.
+
+    Return:
+        wrapped phase.
+    """
     return (phase + np.pi) % (2 * np.pi) - np.pi
 
 
-def compute_rpu(ifreq, grd, abs_feats, weighted_rpu=False, weight_power=5):
+def compute_rpu(ifreq, grd, amplitude, weighted_rpu=False, weight_power=5):
     """Reconstruct phase by Recurrent Phase Unwrapping (RPU).
 
     This function performs phase reconstruction via RPU.
@@ -157,16 +229,26 @@ def compute_rpu(ifreq, grd, abs_feats, weighted_rpu=False, weight_power=5):
     Inter-Frequency Phase Difference for Phase Reconstruction Using Deep Neural
     Networks and Maximum Likelihood, in IEEE/ACM Transactions on Audio,
     Speech, and Language Processing, vol. 31, pp. 1667-1680, 2023.
+
+    Args:
+        ifreq (ndarray): instantaneous frequency. [T-1, K]
+        grd   (ndarray): group delay. [T, K-1]
+        amplitude (ndarray): amplitude spectrum. [T, K]
+        weighted_rpu (bool): flag to apply weighted RPU.
+        weight_power (int): power to weight.
+
+    Return:
+        reconstructed phase. [T, K]
     """
-    n_frame, n_feats = abs_feats.shape
-    grd_new = np.zeros_like(grd)
-    phase = np.zeros((n_frame, n_feats))
-    fd_mat = (
+    n_frame, n_feats = amplitude.shape
+    grd_new = np.zeros_like(grd)  # modified group delay
+    phase = np.zeros_like(amplitude)
+    fd_mat = (  # frequency-directional differential operator (matrix)
         -np.triu(np.ones((n_feats - 1, n_feats)), 1)
         + np.triu(np.ones((n_feats - 1, n_feats)), 2)
         + np.eye(n_feats - 1, n_feats)
     )
-    var = {"ph_temp": None, "dwp": None, "coef": None, "rhs": None}
+    var = {"ph_temp": None, "dwp": None, "fdd_coef": None, "coef": None, "rhs": None}
     for k in range(1, n_feats):
         phase[0, k] = phase[0, k - 1] - grd[0, k - 1]
     if weighted_rpu is False:
@@ -179,19 +261,29 @@ def compute_rpu(ifreq, grd, abs_feats, weighted_rpu=False, weight_power=5):
             phase[tau, :] = np.linalg.solve(var["coef"], var["rhs"])
     else:
         for tau in range(1, n_frame):
-            w_ifreq = np.diag(abs_feats[tau - 1, :] ** weight_power)
-            w_grd = np.diag(abs_feats[tau, :-1] ** weight_power)
-            var["coef"] = w_ifreq + fd_mat.T @ w_grd @ fd_mat
+            w_ifreq = np.diag(amplitude[tau - 1, :] ** weight_power)
+            w_grd = np.diag(amplitude[tau, :-1] ** weight_power)
+            var["fdd_coef"] = fd_mat.T @ w_grd
+            var["coef"] = w_ifreq + var["fdd_coef"] @ fd_mat
             var["ph_temp"] = wrap_phase(phase[tau - 1, :]) + ifreq[tau - 1, :]
             var["dwp"] = fd_mat @ var["ph_temp"]
             grd_new[tau, :] = var["dwp"] + wrap_phase(grd[tau, :] - var["dwp"])
-            var["rhs"] = w_ifreq @ var["ph_temp"] + fd_mat.T @ w_grd @ grd_new[tau, :]
+            var["rhs"] = w_ifreq @ var["ph_temp"] + var["fdd_coef"] @ grd_new[tau, :]
             phase[tau, :] = np.linalg.solve(var["coef"], var["rhs"])
     return phase
 
 
 def get_ifreq_grd(model_tuple, logamp):
-    """Estimate instantaneous frequency and group delay from log-amplitude."""
+    """Estimate instantaneous frequency and group delay from log-amplitude.
+
+    Args:
+        model_tuple (tuple): tuple of DNN params (nn.Module).
+        logamp (ndarray): log amplitude spectrum. [T, K]
+
+    Return:
+        ifreq (ndarray): estimated instantaneous frequency. [T-1, K]
+        grd (ndarray): group delay. [T, K-1]
+    """
     model_ifreq, model_grd = model_tuple  # DNNs
     ifreq = model_ifreq(logamp)
     grd = model_grd(logamp)
@@ -202,29 +294,36 @@ def get_ifreq_grd(model_tuple, logamp):
     return ifreq, grd
 
 
-def reconst_waveform(cfg, model_tuple, logabs_path, scaler, device):
-    """Reconstruct audio waveform only from the amplitude spectrum."""
-    logabs_feats = np.load(logabs_path)
-    abs_feats = np.exp(scaler.inverse_transform(logabs_feats))
-    logabs_feats = np.pad(
-        logabs_feats, ((cfg.model.win_range, cfg.model.win_range), (0, 0)), "constant"
+def reconst_waveform(cfg, model_tuple, logamp_path, scaler, device):
+    """Reconstruct audio waveform only from the amplitude spectrum.
+
+    Args:
+        cfg (DictConfig): configuration.
+        model_tuple (tuple): tuple of DNN params (nn.Module).
+        logamp_path (str): path to the log-amplitude spectrum.
+        scaler (StandardScaler): standard scaler.
+        device: device info.
+
+    Return:
+        None.
+    """
+    logamp = np.load(logamp_path)
+    amplitude = np.exp(scaler.inverse_transform(logamp))
+    logamp = np.pad(
+        logamp, ((cfg.model.win_range, cfg.model.win_range), (0, 0)), "constant"
     )
-    logabs_feats = torch.from_numpy(logabs_feats).float().unsqueeze(0).to(device)
-    logabs_feats = logabs_feats.unfold(1, 2 * cfg.model.win_range + 1, 1)
-    _, n_frame, _, _ = logabs_feats.shape
-    logabs_feats = logabs_feats.reshape(1, n_frame, -1)
-    ifreq, grd = get_ifreq_grd(model_tuple, logabs_feats)
+    logamp = torch.from_numpy(logamp).float().unsqueeze(0).to(device)
+    logamp = logamp.unfold(1, 2 * cfg.model.win_range + 1, 1)
+    _, n_frame, _, _ = logamp.shape
+    logamp = logamp.reshape(1, n_frame, -1)
+    ifreq, grd = get_ifreq_grd(model_tuple, logamp)
     phase = compute_rpu(
-        ifreq,
-        grd,
-        abs_feats,
-        weighted_rpu=cfg.demo.weighted_rpu,
-        weight_power=cfg.demo.weight_power,
+        ifreq, grd, amplitude, cfg.demo.weighted_rpu, cfg.demo.weight_power
     )
     if cfg.demo.gla is True:
         phase = compensate_phase(phase, cfg.feature.win_length, phase.shape[0])
         audio = pra.phase.griffin_lim(
-            abs_feats,
+            amplitude,
             hop=cfg.feature.hop_length,
             analysis_window=signal.get_window(
                 cfg.feature.window, cfg.feature.win_length
@@ -233,7 +332,7 @@ def reconst_waveform(cfg, model_tuple, logabs_path, scaler, device):
             ini=np.exp(1j * phase),
         )
     else:
-        reconst_spec = abs_feats * np.exp(1j * phase)
+        reconst_spec = amplitude * np.exp(1j * phase)
         stfft = signal.ShortTimeFFT(
             win=signal.get_window(cfg.feature.window, cfg.feature.win_length),
             hop=cfg.feature.hop_length,
@@ -242,20 +341,30 @@ def reconst_waveform(cfg, model_tuple, logabs_path, scaler, device):
         )
         audio = stfft.istft(reconst_spec.T)
 
-    wav_file = get_wavname(cfg, os.path.basename(logabs_path))
+    wav_file = get_wavname(cfg, os.path.basename(logamp_path))
     sf.write(wav_file, audio, cfg.feature.sample_rate)
 
 
-def compute_eval_score(cfg, model_tuple, logabs_list, device):
-    """Compute objective scores; PESQ, STOI and LSC."""
+def compute_eval_score(cfg, model_tuple, logamp_list, device):
+    """Compute objective scores; PESQ, STOI and LSC.
+
+    Args:
+        cfg (DictConfig): configuration.
+        model_tuple (tuple): tuple of DNN params (nn.Module).
+        logamp_list (list): list of path to the log-amplitude spectrum.
+        device: device info.
+
+    Return:
+        score_list (dict): dictionary of objective score lists.
+    """
     score_list = {"pesq": [], "stoi": [], "lsc": []}
     stats_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.stats_dir)
     scaler = joblib.load(os.path.join(stats_dir, "stats.pkl"))
-    for logabs_path in prg(logabs_list):
-        reconst_waveform(cfg, model_tuple, logabs_path, scaler, device)
-        score_list["pesq"].append(compute_pesq(cfg, os.path.basename(logabs_path)))
-        score_list["stoi"].append(compute_stoi(cfg, os.path.basename(logabs_path)))
-        score_list["lsc"].append(compute_lsc(cfg, os.path.basename(logabs_path)))
+    for logamp_path in prg(logamp_list):
+        reconst_waveform(cfg, model_tuple, logamp_path, scaler, device)
+        score_list["pesq"].append(compute_pesq(cfg, os.path.basename(logamp_path)))
+        score_list["stoi"].append(compute_stoi(cfg, os.path.basename(logamp_path)))
+        score_list["lsc"].append(compute_lsc(cfg, os.path.basename(logamp_path)))
     return score_list
 
 
@@ -267,28 +376,13 @@ def main(cfg: DictConfig):
     feat_dir = os.path.join(
         cfg.RPU.root_dir, cfg.RPU.feat_dir, cfg.RPU.evalset_dir, cfg.feature.window
     )
-    logabs_list = glob.glob(feat_dir + "/*-feats_logabs.npy")
-    logabs_list.sort()
-
-    if cfg.demo.gla is False:
-        if cfg.demo.weighted_rpu is False:
-            demo_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", "0")
-        else:
-            demo_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.demo_dir, "wRPU", "0")
-    else:
-        if cfg.demo.weighted_rpu is False:
-            demo_dir = os.path.join(
-                cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", f"{cfg.feature.gla_iter}"
-            )
-        else:
-            demo_dir = os.path.join(
-                cfg.RPU.root_dir, cfg.RPU.demo_dir, "wRPU", f"{cfg.feature.gla_iter}"
-            )
+    logamp_list = glob.glob(feat_dir + "/*-feats_logabs.npy")
+    logamp_list.sort()
+    demo_dir = get_wavdir(cfg)
     os.makedirs(demo_dir, exist_ok=True)
-
     score_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.score_dir)
     os.makedirs(score_dir, exist_ok=True)
-    score_dict = compute_eval_score(cfg, (model_ifreq, model_grd), logabs_list, device)
+    score_dict = compute_eval_score(cfg, (model_ifreq, model_grd), logamp_list, device)
     for score_type, score_list in score_dict.items():
         if cfg.demo.gla is False:
             if cfg.demo.weighted_rpu is False:
