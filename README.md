@@ -43,7 +43,7 @@ You need to prepare the following two datasets from [JSUT corpus](https://sites.
 
 4. Run `training.py`. It performs model training.
 
-5. Run `evaluate_scores.py`. It generates reconstructed audio data and computes objective scores (PESQ, STOI, LSC).
+5. Run `evaluate_scores.py`. It generates reconstructed audio data and computes objective scores (PESQ, STOI, LSC). In this script, the function `compute_rpu` implements RPU and weighted RPU.
 
 6. Run `evaluate_scores_zerophase.py`. It also generates reconstructed audio data and computes objective scores (PESQ, STOI, LSC), where phase spectrum is assumed to be zero (zero-phase).
 
