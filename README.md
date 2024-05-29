@@ -2,6 +2,8 @@
 
 This repository provides an unofficial implementation of phase reconstruction based on RPU with DNNs [1].
 
+Additionally, a weighted RPU is also implemented [2].
+
 ## Licence
 MIT licence.
 
@@ -52,3 +54,5 @@ You need to prepare the following two datasets from [JSUT corpus](https://sites.
 ## References
 
 [1] Y. Masuyama, K. Yatabe, Y. Koizumi, Y. Oikawa and N. Harada, "Phase reconstruction based on recurrent phase unwrapping with deep neural networks," IEEE Int. Conf. Acoust., Speech Signal Process. (ICASSP), May 2020.
+
+[2] N. B. Thien, Y. Wakabayashi, K. Iwai and T. Nishiura, "Inter-Frequency Phase Difference for Phase Reconstruction Using Deep Neural Networks and Maximum Likelihood," in IEEE/ACM Transactions on Audio, Speech, and Language Processing, vol. 31, pp. 1667-1680, 2023, doi: 10.1109/TASLP.2023.3268577.
