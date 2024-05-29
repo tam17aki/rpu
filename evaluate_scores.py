@@ -142,7 +142,7 @@ def wrap_phase(phase):
     return (phase + np.pi) % (2 * np.pi) - np.pi
 
 
-def compute_rpu(ifreq, grd, n_frame, n_feats):
+def compute_rpu(ifreq, grd, abs_feats, weighted_rpu=False, weight_power=5):
     """Reconstruct phase by Recurrent Phase Unwrapping (RPU).
 
     This function performs phase reconstruction via RPU.
@@ -150,7 +150,15 @@ def compute_rpu(ifreq, grd, n_frame, n_feats):
     Y. Masuyama, K. Yatabe, Y. Koizumi, Y. Oikawa, and N. Harada,
     Phase reconstruction based on recurrent phase unwrapping with deep neural
     networks, IEEE Int. Conf. Acoust., Speech Signal Process. (ICASSP), May 2020.
+
+    For weighted RPU, see:
+
+    N. B. Thien, Y. Wakabayashi, K. Iwai and T. Nishiura,
+    Inter-Frequency Phase Difference for Phase Reconstruction Using Deep Neural
+    Networks and Maximum Likelihood, in IEEE/ACM Transactions on Audio,
+    Speech, and Language Processing, vol. 31, pp. 1667-1680, 2023.
     """
+    n_frame, n_feats = abs_feats.shape
     grd_new = np.zeros_like(grd)
     phase = np.zeros((n_frame, n_feats))
     fd_mat = (
@@ -158,13 +166,27 @@ def compute_rpu(ifreq, grd, n_frame, n_feats):
         + np.triu(np.ones((n_feats - 1, n_feats)), 2)
         + np.eye(n_feats - 1, n_feats)
     )
-    coef = fd_mat.T @ fd_mat + np.eye(n_feats)
-    for tau in range(1, n_frame):
-        phase_temp = wrap_phase(phase[tau - 1, :]) + ifreq[tau - 1, :]  # Eq. (10)
-        dwp = fd_mat @ phase_temp
-        grd_new[tau, :] = dwp + wrap_phase(grd[tau, :] - dwp)  # Eq. (11)
-        rhs = phase_temp + fd_mat.T @ grd_new[tau, :]
-        phase[tau, :] = np.linalg.solve(coef, rhs)  # Eq. (9)
+    var = {"ph_temp": None, "dwp": None, "coef": None, "rhs": None}
+    for k in range(1, n_feats):
+        phase[0, k] = phase[0, k - 1] - grd[0, k - 1]
+    if weighted_rpu is False:
+        var["coef"] = fd_mat.T @ fd_mat + np.eye(n_feats)
+        for tau in range(1, n_frame):
+            var["ph_temp"] = wrap_phase(phase[tau - 1, :]) + ifreq[tau - 1, :]
+            var["dwp"] = fd_mat @ var["ph_temp"]
+            grd_new[tau, :] = var["dwp"] + wrap_phase(grd[tau, :] - var["dwp"])
+            var["rhs"] = var["ph_temp"] + fd_mat.T @ grd_new[tau, :]
+            phase[tau, :] = np.linalg.solve(var["coef"], var["rhs"])
+    else:
+        for tau in range(1, n_frame):
+            w_ifreq = np.diag(abs_feats[tau - 1, :] ** weight_power)
+            w_grd = np.diag(abs_feats[tau, :-1] ** weight_power)
+            var["coef"] = w_ifreq + fd_mat.T @ w_grd @ fd_mat
+            var["ph_temp"] = wrap_phase(phase[tau - 1, :]) + ifreq[tau - 1, :]
+            var["dwp"] = fd_mat @ var["ph_temp"]
+            grd_new[tau, :] = var["dwp"] + wrap_phase(grd[tau, :] - var["dwp"])
+            var["rhs"] = w_ifreq @ var["ph_temp"] + fd_mat.T @ w_grd @ grd_new[tau, :]
+            phase[tau, :] = np.linalg.solve(var["coef"], var["rhs"])
     return phase
 
 
@@ -192,7 +214,13 @@ def reconst_waveform(cfg, model_tuple, logabs_path, scaler, device):
     _, n_frame, _, _ = logabs_feats.shape
     logabs_feats = logabs_feats.reshape(1, n_frame, -1)
     ifreq, grd = get_ifreq_grd(model_tuple, logabs_feats)
-    phase = compute_rpu(ifreq, grd, n_frame, n_feats=abs_feats.shape[-1])
+    phase = compute_rpu(
+        ifreq,
+        grd,
+        abs_feats,
+        weighted_rpu=cfg.demo.weighted_rpu,
+        weight_power=cfg.demo.weight_power,
+    )
     if cfg.demo.gla is True:
         phase = compensate_phase(phase, cfg.feature.win_length, phase.shape[0])
         audio = pra.phase.griffin_lim(
@@ -243,11 +271,19 @@ def main(cfg: DictConfig):
     logabs_list.sort()
 
     if cfg.demo.gla is False:
-        demo_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", "0")
+        if cfg.demo.weighted_rpu is False:
+            demo_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", "0")
+        else:
+            demo_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.demo_dir, "wRPU", "0")
     else:
-        demo_dir = os.path.join(
-            cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", f"{cfg.feature.gla_iter}"
-        )
+        if cfg.demo.weighted_rpu is False:
+            demo_dir = os.path.join(
+                cfg.RPU.root_dir, cfg.RPU.demo_dir, "RPU", f"{cfg.feature.gla_iter}"
+            )
+        else:
+            demo_dir = os.path.join(
+                cfg.RPU.root_dir, cfg.RPU.demo_dir, "wRPU", f"{cfg.feature.gla_iter}"
+            )
     os.makedirs(demo_dir, exist_ok=True)
 
     score_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.score_dir)
@@ -255,9 +291,15 @@ def main(cfg: DictConfig):
     score_dict = compute_eval_score(cfg, (model_ifreq, model_grd), logabs_list, device)
     for score_type, score_list in score_dict.items():
         if cfg.demo.gla is False:
-            out_filename = os.path.join(score_dir, f"{score_type}_score_0_RPU.txt")
+            if cfg.demo.weighted_rpu is False:
+                out_filename = os.path.join(score_dir, f"{score_type}_score_0_RPU.txt")
+            else:
+                out_filename = os.path.join(score_dir, f"{score_type}_score_0_wRPU.txt")
         else:
-            out_filename = f"{score_type}_score_{cfg.feature.gla_iter}_RPU.txt"
+            if cfg.demo.weighted_rpu is False:
+                out_filename = f"{score_type}_score_{cfg.feature.gla_iter}_RPU.txt"
+            else:
+                out_filename = f"{score_type}_score_{cfg.feature.gla_iter}_wRPU.txt"
         out_filename = os.path.join(score_dir, out_filename)
         with open(out_filename, mode="w", encoding="utf-8") as file_handler:
             for score in score_list:

@@ -26,7 +26,7 @@ feature:
   hop_length: 128     # hop length (frame shift length)
   window: "hann"      # window type
   n_fft: 512          # FFT length
-  gla_iter: 100       # iterations of Griffin-Lim algorithm
+  gla_iter: 100      # iterations of Griffin-Lim algorithm
 
 model:
   input_dim: 257
@@ -54,6 +54,8 @@ training:
   grad_max_norm: 10  # clipping value
 
 demo:
-  gla: False  # True: reconstruction with Griffin-Lim method
+  gla: True  # True: reconstruction with Griffin-Lim method
   pesq_band: "wb"  # "wb": wideband or "nb": narrowband
   stoi_extended: False  # True: extended STOI
+  weighted_rpu: False # True: weighted RPU
+  weight_power: 5  # power of weight
