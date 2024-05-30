@@ -36,6 +36,8 @@ from pesq import pesq
 from progressbar import progressbar as prg
 from pystoi import stoi
 from scipy import signal
+from scipy.linalg import solve_banded
+from scipy.sparse import csr_array
 
 from model import get_model
 
@@ -214,6 +216,25 @@ def wrap_phase(phase):
     return (phase + np.pi) % (2 * np.pi) - np.pi
 
 
+def get_band_coef(matrix):
+    """Returns band triagonal elements of coef matrix.
+
+    Args:
+        matrix: band triagonal matrix.
+
+    Return:
+        band triagonal elements (upper, diag, lower).
+    """
+    upper = np.diag(matrix, 1)
+    upper = np.concatenate((np.array([0]), upper))
+    lower = np.diag(matrix, -1)
+    lower = np.concatenate((lower, np.array([0])))
+    band_elem = np.concatenate(
+        (upper.reshape(1, -1), np.diag(matrix).reshape(1, -1), lower.reshape(1, -1))
+    )
+    return band_elem
+
+
 def compute_rpu(ifreq, grd, amplitude, weighted_rpu=False, weight_power=5):
     """Reconstruct phase by Recurrent Phase Unwrapping (RPU).
 
@@ -248,28 +269,31 @@ def compute_rpu(ifreq, grd, amplitude, weighted_rpu=False, weight_power=5):
         + np.triu(np.ones((n_feats - 1, n_feats)), 2)
         + np.eye(n_feats - 1, n_feats)
     )
+    fd_mat = csr_array(fd_mat)
     var = {"ph_temp": None, "dwp": None, "fdd_coef": None, "coef": None, "rhs": None}
     for k in range(1, n_feats):
         phase[0, k] = phase[0, k - 1] - grd[0, k - 1]
     if weighted_rpu is False:
         var["coef"] = fd_mat.T @ fd_mat + np.eye(n_feats)
+        var["coef"] = get_band_coef(var["coef"])
         for tau in range(1, n_frame):
             var["ph_temp"] = wrap_phase(phase[tau - 1, :]) + ifreq[tau - 1, :]
             var["dwp"] = fd_mat @ var["ph_temp"]
             grd_new[tau, :] = var["dwp"] + wrap_phase(grd[tau, :] - var["dwp"])
             var["rhs"] = var["ph_temp"] + fd_mat.T @ grd_new[tau, :]
-            phase[tau, :] = np.linalg.solve(var["coef"], var["rhs"])
+            phase[tau, :] = solve_banded((1, 1), var["coef"], var["rhs"])
     else:
         for tau in range(1, n_frame):
-            w_ifreq = np.diag(amplitude[tau - 1, :] ** weight_power)
-            w_grd = np.diag(amplitude[tau, :-1] ** weight_power)
-            var["fdd_coef"] = fd_mat.T @ w_grd
-            var["coef"] = w_ifreq + var["fdd_coef"] @ fd_mat
+            w_ifreq = amplitude[tau - 1, :] ** weight_power
+            w_grd = amplitude[tau, :-1] ** weight_power
+            var["fdd_coef"] = fd_mat.T * w_grd
+            var["coef"] = np.diag(w_ifreq) + var["fdd_coef"] @ fd_mat
+            var["coef"] = get_band_coef(var["coef"])
             var["ph_temp"] = wrap_phase(phase[tau - 1, :]) + ifreq[tau - 1, :]
             var["dwp"] = fd_mat @ var["ph_temp"]
             grd_new[tau, :] = var["dwp"] + wrap_phase(grd[tau, :] - var["dwp"])
-            var["rhs"] = w_ifreq @ var["ph_temp"] + var["fdd_coef"] @ grd_new[tau, :]
-            phase[tau, :] = np.linalg.solve(var["coef"], var["rhs"])
+            var["rhs"] = w_ifreq * var["ph_temp"] + var["fdd_coef"] @ grd_new[tau, :]
+            phase[tau, :] = solve_banded((1, 1), var["coef"], var["rhs"])
     return phase
 
 
