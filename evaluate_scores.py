@@ -50,7 +50,8 @@ def load_checkpoint(cfg: DictConfig, device):
         device: device info.
 
     Returns:
-        Tuple: tuple of DNN modules.
+        model_ifreq (torch.nn.Module): DNNs to estimate instantaneous frequency.
+        model_grd   (torch.nn.Module): DNNs to estimate group delay.
     """
     model_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.model_dir)
     model_ifreq = get_model(cfg, device)
@@ -262,7 +263,7 @@ def compute_rpu(ifreq, grd, amplitude, weighted_rpu=False, weight_power=5):
         weight_power (int): power to weight.
 
     Returns:
-        reconstructed phase. [T, K]
+        phase (ndarray): reconstructed phase. [T, K]
     """
     n_frame, n_feats = amplitude.shape
     grd_new = np.zeros_like(grd)  # modified group delay
