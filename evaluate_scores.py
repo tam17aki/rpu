@@ -48,6 +48,9 @@ def load_checkpoint(cfg: DictConfig, device):
     Args:
         cfg (DictConfig): configuration.
         device: device info.
+
+    Returns:
+        Tuple: tuple of DNN modules.
     """
     model_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.model_dir)
     model_ifreq = get_model(cfg, device)
@@ -112,7 +115,7 @@ def compute_pesq(cfg, basename):
         basename (str): basename of wavefile for evaluation.
 
     Returns:
-        PESQ (or wideband PESQ).
+        float: PESQ (or wideband PESQ).
     """
     eval_wav, _ = sf.read(get_wavname(cfg, basename))
     ref_wavname, _ = os.path.splitext(basename)
@@ -136,7 +139,7 @@ def compute_stoi(cfg, basename):
         basename (str): basename of wavefile for evaluation.
 
     Returns:
-        STOI (or ESTOI).
+        float: STOI (or ESTOI).
     """
     eval_wav, _ = sf.read(get_wavname(cfg, basename))
     ref_wavname, _ = os.path.splitext(basename)
@@ -159,7 +162,7 @@ def compute_lsc(cfg, basename):
         cfg (DictConfig): configuration.
 
     Returns:
-        log-spectral convergence.
+        float: log-spectral convergence.
     """
     eval_wav, _ = sf.read(get_wavname(cfg, basename))
     ref_wavname, _ = os.path.splitext(basename)
@@ -208,10 +211,10 @@ def wrap_phase(phase):
     """Compute wrapped phase.
 
     Args:
-        phase: phase spectrum.
+        phase (ndarray): phase spectrum.
 
-    Return:
-        wrapped phase.
+    Returns:
+        wrapped phase (ndarray).
     """
     return (phase + np.pi) % (2 * np.pi) - np.pi
 
@@ -220,10 +223,10 @@ def get_band_coef(matrix):
     """Returns band triagonal elements of coef matrix.
 
     Args:
-        matrix: band triagonal matrix.
+        matrix (ndarray): band triagonal matrix.
 
-    Return:
-        band triagonal elements (upper, diag, lower).
+    Returns:
+        band_elem (ndarray): band triagonal elements (upper, diag, and lower).
     """
     upper = np.diag(matrix, 1)
     upper = np.concatenate((np.array([0]), upper))
@@ -258,7 +261,7 @@ def compute_rpu(ifreq, grd, amplitude, weighted_rpu=False, weight_power=5):
         weighted_rpu (bool): flag to apply weighted RPU.
         weight_power (int): power to weight.
 
-    Return:
+    Returns:
         reconstructed phase. [T, K]
     """
     n_frame, n_feats = amplitude.shape
@@ -304,7 +307,7 @@ def get_ifreq_grd(model_tuple, logamp):
         model_tuple (tuple): tuple of DNN params (nn.Module).
         logamp (ndarray): log amplitude spectrum. [T, K]
 
-    Return:
+    Returns:
         ifreq (ndarray): estimated instantaneous frequency. [T-1, K]
         grd (ndarray): group delay. [T, K-1]
     """
@@ -328,7 +331,7 @@ def reconst_waveform(cfg, model_tuple, logamp_path, scaler, device):
         scaler (StandardScaler): standard scaler.
         device: device info.
 
-    Return:
+    Returns:
         None.
     """
     logamp = np.load(logamp_path)
@@ -378,7 +381,7 @@ def compute_eval_score(cfg, model_tuple, logamp_list, device):
         logamp_list (list): list of path to the log-amplitude spectrum.
         device: device info.
 
-    Return:
+    Returns:
         score_list (dict): dictionary of objective score lists.
     """
     score_list = {"pesq": [], "stoi": [], "lsc": []}
