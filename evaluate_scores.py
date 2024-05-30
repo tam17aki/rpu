@@ -220,7 +220,7 @@ def wrap_phase(phase):
 
 
 def get_band_coef(matrix):
-    """Returns band triagonal elements of coef matrix.
+    """Return band triagonal elements of coef matrix.
 
     Args:
         matrix (ndarray): band triagonal matrix.
