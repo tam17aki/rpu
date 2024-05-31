@@ -221,13 +221,13 @@ def wrap_phase(phase):
 
 
 def get_band_coef(matrix):
-    """Return band triagonal elements of coef matrix.
+    """Return band tridiagonal elements of coef matrix.
 
     Args:
-        matrix (ndarray): band triagonal matrix.
+        matrix (ndarray): band tridiagonal matrix.
 
     Returns:
-        band_elem (ndarray): band triagonal elements (upper, diag, and lower).
+        band_elem (ndarray): band tridiagonal elements (upper, diag, and lower).
     """
     upper = np.diag(matrix, 1)
     upper = np.concatenate((np.array([0]), upper))
