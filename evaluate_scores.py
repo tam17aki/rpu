@@ -199,7 +199,7 @@ def compensate_phase(phase, win_len, n_frame):
         n_frame (int): length of frame.
 
     Returns:
-        phase (ndarray): compensated phaes spectrum.
+        phase (ndarray): compensated phase spectrum.
     """
     k = np.arange(0, win_len // 2 + 1)
     angle_freq = (2 * np.pi / win_len) * k * (win_len - 1) / 2
