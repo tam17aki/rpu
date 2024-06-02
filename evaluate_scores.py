@@ -266,7 +266,6 @@ def compute_rpu(ifreq, grd, amplitude, weighted_rpu=False, weight_power=5):
         phase (ndarray): reconstructed phase. [T, K]
     """
     n_frame, n_feats = amplitude.shape
-    grd_new = np.zeros_like(grd)  # modified group delay
     phase = np.zeros_like(amplitude)
     fd_mat = (  # frequency-directional differential operator (matrix)
         -np.triu(np.ones((n_feats - 1, n_feats)), 1)
@@ -283,8 +282,8 @@ def compute_rpu(ifreq, grd, amplitude, weighted_rpu=False, weight_power=5):
         for tau in range(1, n_frame):
             var["ph_temp"] = wrap_phase(phase[tau - 1, :]) + ifreq[tau - 1, :]
             var["dwp"] = fd_mat @ var["ph_temp"]
-            grd_new[tau, :] = var["dwp"] + wrap_phase(grd[tau, :] - var["dwp"])
-            var["rhs"] = var["ph_temp"] + fd_mat.T @ grd_new[tau, :]
+            grd_new = var["dwp"] + wrap_phase(grd[tau, :] - var["dwp"])
+            var["rhs"] = var["ph_temp"] + fd_mat.T @ grd_new
             phase[tau, :] = solve_banded((1, 1), var["coef"], var["rhs"])
     else:
         for tau in range(1, n_frame):
@@ -295,8 +294,8 @@ def compute_rpu(ifreq, grd, amplitude, weighted_rpu=False, weight_power=5):
             var["coef"] = get_band_coef(var["coef"])
             var["ph_temp"] = wrap_phase(phase[tau - 1, :]) + ifreq[tau - 1, :]
             var["dwp"] = fd_mat @ var["ph_temp"]
-            grd_new[tau, :] = var["dwp"] + wrap_phase(grd[tau, :] - var["dwp"])
-            var["rhs"] = w_ifreq * var["ph_temp"] + var["fdd_coef"] @ grd_new[tau, :]
+            grd_new = var["dwp"] + wrap_phase(grd[tau, :] - var["dwp"])
+            var["rhs"] = w_ifreq * var["ph_temp"] + var["fdd_coef"] @ grd_new
             phase[tau, :] = solve_banded((1, 1), var["coef"], var["rhs"])
     return phase
 
