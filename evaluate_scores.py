@@ -161,6 +161,7 @@ def compute_lsc(cfg, basename):
 
     Args:
         cfg (DictConfig): configuration.
+        basename (str): basename of wavefile for evaluation.
 
     Returns:
         float: log-spectral convergence.
