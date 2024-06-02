@@ -37,21 +37,16 @@ from progressbar import progressbar as prg
 from pystoi import stoi
 from scipy import signal
 
-from model import get_model
-
-
-def load_checkpoint(cfg: DictConfig, device):
-    """Load checkpoint."""
-    model = get_model(cfg, device)
-    model_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.model_dir)
-    model_file = os.path.join(model_dir, cfg.training.model_file)
-    checkpoint = torch.load(model_file)
-    model.load_state_dict(checkpoint)
-    return model
-
 
 def get_wavname(cfg, basename):
-    """Return filename of wavefile to be evaluate."""
+    """Return dirname of wavefile to be evaluated.
+
+    Args:
+        cfg (DictConfig): configuration.
+
+    Returns:
+        wav_dir (str): dirname of wavefile.
+    """
     wav_name, _ = os.path.splitext(basename)
     wav_name = wav_name.split("-")[0]
     if cfg.demo.gla is False:
@@ -65,7 +60,15 @@ def get_wavname(cfg, basename):
 
 
 def compute_pesq(cfg, basename):
-    """Compute PESQ and wideband PESQ."""
+    """Compute PESQ and wideband PESQ.
+
+    Args:
+        cfg (DictConfig): configuration.
+        basename (str): basename of wavefile for evaluation.
+
+    Returns:
+        float: PESQ (or wideband PESQ).
+    """
     eval_wav, _ = sf.read(get_wavname(cfg, basename))
     ref_wavname, _ = os.path.splitext(basename)
     ref_wavname = ref_wavname.split("-")[0]
@@ -81,7 +84,15 @@ def compute_pesq(cfg, basename):
 
 
 def compute_stoi(cfg, basename):
-    """Compute STOI and extended STOI (optional)."""
+    """Compute STOI or extended STOI (ESTOI).
+
+    Args:
+        cfg (DictConfig): configuration.
+        basename (str): basename of wavefile for evaluation.
+
+    Returns:
+        float: STOI (or ESTOI).
+    """
     eval_wav, _ = sf.read(get_wavname(cfg, basename))
     ref_wavname, _ = os.path.splitext(basename)
     ref_wavname = ref_wavname.split("-")[0]
@@ -97,7 +108,14 @@ def compute_stoi(cfg, basename):
 
 
 def compute_lsc(cfg, basename):
-    """Compute log-spectral convergence (LSC)."""
+    """Compute log-spectral convergence (LSC).
+
+    Args:
+        cfg (DictConfig): configuration.
+
+    Returns:
+        float: log-spectral convergence.
+    """
     eval_wav, _ = sf.read(get_wavname(cfg, basename))
     ref_wavname, _ = os.path.splitext(basename)
     ref_wavname = ref_wavname.split("-")[0]
@@ -124,7 +142,16 @@ def compute_lsc(cfg, basename):
 
 
 def compensate_phase(phase, win_len, n_frame):
-    """Compensate uniform linear phases."""
+    """Compensate uniform linear phases.
+
+    Args:
+        phase (ndarray): phase spectrum.
+        win_len (int): length of window.
+        n_frame (int): length of frame.
+
+    Returns:
+        phase (ndarray): compensated phase spectrum.
+    """
     k = np.arange(0, win_len // 2 + 1)
     angle_freq = (2 * np.pi / win_len) * k * (win_len - 1) / 2
     angle_freq = np.tile(np.expand_dims(angle_freq, 0), [n_frame, 1])
@@ -133,16 +160,20 @@ def compensate_phase(phase, win_len, n_frame):
 
 
 def reconst_waveform(cfg, logabs_path, scaler, device):
-    """Reconstruct audio waveform only from the amplitude spectrum."""
+    """Reconstruct audio waveform only from the amplitude spectrum.
+
+    Args:
+        cfg (DictConfig): configuration.
+        model_tuple (tuple): tuple of DNN params (nn.Module).
+        logamp_path (str): path to the log-amplitude spectrum.
+        scaler (StandardScaler): standard scaler.
+        device: device info.
+
+    Returns:
+        None.
+    """
     logabs_feats = np.load(logabs_path)
     abs_feats = np.exp(scaler.inverse_transform(logabs_feats))
-    logabs_feats = np.pad(
-        logabs_feats, ((cfg.model.win_range, cfg.model.win_range), (0, 0)), "constant"
-    )
-    logabs_feats = torch.from_numpy(logabs_feats).float().unsqueeze(0).to(device)
-    logabs_feats = logabs_feats.unfold(1, 2 * cfg.model.win_range + 1, 1)
-    _, n_frame, _, _ = logabs_feats.shape
-    logabs_feats = logabs_feats.reshape(1, n_frame, -1)
     phase = np.random.uniform(low=-np.pi, high=np.pi, size=abs_feats.shape)
     if cfg.demo.gla is True:
         audio = pra.phase.griffin_lim(
