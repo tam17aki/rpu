@@ -97,6 +97,7 @@ def get_wavname(cfg, basename):
 
     Args:
         cfg (DictConfig): configuration.
+        basename (str): basename of wavefile for evaluation.
 
     Returns:
         wav_file (str): filename of wavefile.
