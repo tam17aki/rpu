@@ -200,7 +200,16 @@ def reconst_waveform(cfg, logabs_path, scaler, device):
 
 
 def compute_eval_score(cfg, logabs_list, device):
-    """Compute objective scores; PESQ, STOI and LSC."""
+    """Compute objective scores; PESQ, STOI and LSC.
+
+    Args:
+        cfg (DictConfig): configuration.
+        logabs_list (list): list of path to the log-amplitude spectrum.
+        device: device info.
+
+    Returns:
+        score_list (dict): dictionary of objective score lists.
+    """
     score_dict = {"pesq": [], "stoi": [], "lsc": []}
     stats_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.stats_dir)
     scaler = joblib.load(os.path.join(stats_dir, "stats.pkl"))
