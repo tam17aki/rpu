@@ -112,6 +112,7 @@ def compute_lsc(cfg, basename):
 
     Args:
         cfg (DictConfig): configuration.
+        basename (str): basename of wavefile for evaluation.
 
     Returns:
         float: log-spectral convergence.
@@ -164,8 +165,7 @@ def reconst_waveform(cfg, logabs_path, scaler, device):
 
     Args:
         cfg (DictConfig): configuration.
-        model_tuple (tuple): tuple of DNN params (nn.Module).
-        logamp_path (str): path to the log-amplitude spectrum.
+        logabs_path (str): path to the log-amplitude spectrum.
         scaler (StandardScaler): standard scaler.
         device: device info.
 
@@ -174,13 +174,6 @@ def reconst_waveform(cfg, logabs_path, scaler, device):
     """
     logabs_feats = np.load(logabs_path)
     abs_feats = np.exp(scaler.inverse_transform(logabs_feats))
-    logabs_feats = np.pad(
-        logabs_feats, ((cfg.model.win_range, cfg.model.win_range), (0, 0)), "constant"
-    )
-    logabs_feats = torch.from_numpy(logabs_feats).float().unsqueeze(0).to(device)
-    logabs_feats = logabs_feats.unfold(1, 2 * cfg.model.win_range + 1, 1)
-    _, n_frame, _, _ = logabs_feats.shape
-    logabs_feats = logabs_feats.reshape(1, n_frame, -1)
     if cfg.demo.gla is True:
         audio = pra.phase.griffin_lim(
             abs_feats,
@@ -208,8 +201,7 @@ def compute_eval_score(cfg, logabs_list, device):
 
     Args:
         cfg (DictConfig): configuration.
-        model_tuple (tuple): tuple of DNN params (nn.Module).
-        logamp_list (list): list of path to the log-amplitude spectrum.
+        logabs_list (list): list of path to the log-amplitude spectrum.
         device: device info.
 
     Returns:
