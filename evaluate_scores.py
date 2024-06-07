@@ -58,13 +58,11 @@ def load_checkpoint(cfg: DictConfig, device):
     model_file = os.path.join(model_dir, cfg.training.model_file + ".ifreq")
     checkpoint = torch.load(model_file)
     model_ifreq.load_state_dict(checkpoint)
-    model_ifreq.eval()
 
     model_grd = get_model(cfg, device)
     model_file = os.path.join(model_dir, cfg.training.model_file + ".grd")
     checkpoint = torch.load(model_file)
     model_grd.load_state_dict(checkpoint)
-    model_grd.eval()
     return model_ifreq, model_grd
 
 
@@ -404,6 +402,8 @@ def main(cfg: DictConfig):
     """Perform model training."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_ifreq, model_grd = load_checkpoint(cfg, device)
+    model_ifreq.eval()
+    model_grd.eval()
     feat_dir = os.path.join(
         cfg.RPU.root_dir, cfg.RPU.feat_dir, cfg.RPU.evalset_dir, cfg.feature.window
     )
