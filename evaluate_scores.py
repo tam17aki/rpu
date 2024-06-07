@@ -58,11 +58,13 @@ def load_checkpoint(cfg: DictConfig, device):
     model_file = os.path.join(model_dir, cfg.training.model_file + ".ifreq")
     checkpoint = torch.load(model_file)
     model_ifreq.load_state_dict(checkpoint)
+    model_ifreq.eval()
 
     model_grd = get_model(cfg, device)
     model_file = os.path.join(model_dir, cfg.training.model_file + ".grd")
     checkpoint = torch.load(model_file)
     model_grd.load_state_dict(checkpoint)
+    model_grd.eval()
     return model_ifreq, model_grd
 
 
@@ -302,6 +304,7 @@ def compute_rpu(ifreq, grd, amplitude, weighted_rpu=False, weight_power=5):
     return phase
 
 
+@torch.no_grad()
 def get_ifreq_grd(model_tuple, logamp):
     """Estimate instantaneous frequency and group delay from log-amplitude.
 
@@ -397,7 +400,6 @@ def compute_eval_score(cfg, model_tuple, logamp_list, device):
     return score_list
 
 
-@torch.no_grad()
 def main(cfg: DictConfig):
     """Perform model training."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
