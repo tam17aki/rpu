@@ -399,7 +399,7 @@ def compute_eval_score(cfg, model_tuple, logamp_list, device):
 
 
 def main(cfg: DictConfig):
-    """Perform model training."""
+    """Perform evaluation."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_ifreq, model_grd = load_checkpoint(cfg, device)
     model_ifreq.eval()
