@@ -24,6 +24,7 @@ SOFTWARE.
 
 import glob
 import os
+from concurrent.futures import ProcessPoolExecutor
 
 import joblib
 import numpy as np
@@ -38,6 +39,7 @@ from pystoi import stoi
 from scipy import signal
 from scipy.linalg import solve_banded
 from scipy.sparse import csr_array
+from torch.multiprocessing import set_start_method
 
 from model import get_model
 
@@ -324,7 +326,7 @@ def get_ifreq_grd(model_tuple, logamp):
     return ifreq, grd
 
 
-def reconst_waveform(cfg, model_tuple, logamp_path, scaler, device):
+def _reconst_waveform(cfg, model_tuple, logamp_path, scaler, device):
     """Reconstruct audio waveform only from the amplitude spectrum.
 
     Args:
@@ -375,6 +377,33 @@ def reconst_waveform(cfg, model_tuple, logamp_path, scaler, device):
     sf.write(wav_file, audio, cfg.feature.sample_rate)
 
 
+def reconst_waveform(cfg, model_tuple, logmag_list, device):
+    """Reconstruct audio waveforms in parallel.
+
+    Args:
+        cfg (DictConfig): configuration.
+        model_tuple (Tuple): tuple of DNN params (nn.Module).
+        logmag_list (list): list of path to the log-magnitude spectrum.
+        device: device info.
+
+    Returns:
+        score_list (dict): dictionary of objective score lists.
+    """
+    print("Reconstruct waveform.")
+    set_start_method("spawn")
+    stats_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.stats_dir)
+    scaler = joblib.load(os.path.join(stats_dir, "stats.pkl"))
+    with ProcessPoolExecutor(cfg.preprocess.n_jobs) as executor:
+        futures = [
+            executor.submit(
+                _reconst_waveform, cfg, model_tuple, logmag_path, scaler, device
+            )
+            for logmag_path in logmag_list
+        ]
+        for future in prg(futures):
+            future.result()  # return None
+
+
 def compute_eval_score(cfg, model_tuple, logamp_list, device):
     """Compute objective scores; PESQ, STOI and LSC.
 
@@ -388,10 +417,7 @@ def compute_eval_score(cfg, model_tuple, logamp_list, device):
         score_list (dict): dictionary of objective score lists.
     """
     score_list = {"pesq": [], "stoi": [], "lsc": []}
-    stats_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.stats_dir)
-    scaler = joblib.load(os.path.join(stats_dir, "stats.pkl"))
     for logamp_path in prg(logamp_list):
-        reconst_waveform(cfg, model_tuple, logamp_path, scaler, device)
         score_list["pesq"].append(compute_pesq(cfg, os.path.basename(logamp_path)))
         score_list["stoi"].append(compute_stoi(cfg, os.path.basename(logamp_path)))
         score_list["lsc"].append(compute_lsc(cfg, os.path.basename(logamp_path)))
@@ -413,6 +439,7 @@ def main(cfg: DictConfig):
     os.makedirs(demo_dir, exist_ok=True)
     score_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.score_dir)
     os.makedirs(score_dir, exist_ok=True)
+    reconst_waveform(cfg, (model_ifreq, model_grd), logamp_list, device)
     score_dict = compute_eval_score(cfg, (model_ifreq, model_grd), logamp_list, device)
     for score_type, score_list in score_dict.items():
         if cfg.demo.gla is False:
