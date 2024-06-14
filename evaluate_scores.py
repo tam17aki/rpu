@@ -416,6 +416,7 @@ def compute_eval_score(cfg, model_tuple, logamp_list, device):
     Returns:
         score_list (dict): dictionary of objective score lists.
     """
+    print("Compute objective scores.")
     score_list = {"pesq": [], "stoi": [], "lsc": []}
     for logamp_path in prg(logamp_list):
         score_list["pesq"].append(compute_pesq(cfg, os.path.basename(logamp_path)))
