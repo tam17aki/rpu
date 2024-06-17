@@ -5,6 +5,7 @@ RPU: # RPU: Recurrent Phase Unwrapping
   evalset_dir: "onoma300/"   # you must download the dataset & specify its dirname
   resample_dir: "resample_16k/"
   resample_trim_dir: "resample_16k_trim/"
+  split_dir: "split/"
   label_dir: "label/"
   feat_dir: "feat/"
   stats_dir: "stats/"
