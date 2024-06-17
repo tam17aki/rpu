@@ -23,6 +23,7 @@ SOFTWARE.
 """
 
 import glob
+import math
 import os
 import subprocess
 from concurrent.futures import ProcessPoolExecutor
@@ -139,6 +140,40 @@ def trim_silence(cfg, is_train=True):
             )
 
 
+def split_utterance(cfg):
+    """Split utterances after resampling into segments.
+
+    Args:
+        cfg (DictConfig): configuration in YAML format.
+    """
+    wav_dir = os.path.join(
+        cfg.RPU.root_dir,
+        cfg.RPU.data_dir,
+        cfg.RPU.trainset_dir,
+        cfg.RPU.resample_trim_dir,
+    )
+    wav_list = glob.glob(wav_dir + "/*.wav")
+    wav_list.sort()
+    sec_per_split = cfg.preprocess.sec_per_split
+
+    out_dir = os.path.join(
+        cfg.RPU.root_dir, cfg.RPU.data_dir, cfg.RPU.trainset_dir, cfg.RPU.split_dir
+    )
+    os.makedirs(out_dir, exist_ok=True)
+    print("Split utterances:")
+    for wav_name in prg(wav_list):
+        audio = AudioSegment.from_wav(wav_name)
+        duration = math.floor(audio.duration_seconds)
+        for i in range(0, int(duration // sec_per_split)):
+            basename, ext = os.path.splitext(wav_name)
+            split_fn = basename + "_" + str(i) + ext
+            out_file = os.path.join(out_dir, os.path.basename(split_fn))
+            split_audio = audio[i * 1000 : (i + sec_per_split) * 1000]
+            # exclude samples less than 0.9 seconds
+            if split_audio.duration_seconds > (sec_per_split - 0.01):
+                split_audio.export(out_file, format="wav")
+
+
 def _fit_scaler(cfg, utt_list):
     """Fit standard scaler.
 
@@ -148,10 +183,7 @@ def _fit_scaler(cfg, utt_list):
     """
     scaler = StandardScaler()
     wav_dir = os.path.join(
-        cfg.RPU.root_dir,
-        cfg.RPU.data_dir,
-        cfg.RPU.trainset_dir,
-        cfg.RPU.resample_trim_dir,
+        cfg.RPU.root_dir, cfg.RPU.data_dir, cfg.RPU.trainset_dir, cfg.RPU.split_dir
     )
     for utt_id in prg(utt_list):
         wav_file = os.path.join(wav_dir, utt_id + ".wav")
@@ -172,6 +204,28 @@ def _fit_scaler(cfg, utt_list):
     return scaler
 
 
+def fit_scaler(cfg, is_train=True):
+    """Fit standartd scaler.
+
+    Args:
+        cfg (DictConfig): configuration in YAML format.
+        is_train (Bool): handling training dataset or test dataset.
+    """
+    dataset_dir = cfg.RPU.trainset_dir if is_train is True else cfg.RPU.evalset_dir
+    wav_list = os.listdir(
+        os.path.join(cfg.RPU.root_dir, cfg.RPU.data_dir, dataset_dir, cfg.RPU.split_dir)
+    )
+    utt_list = [
+        os.path.splitext(os.path.basename(wav_file))[0] for wav_file in wav_list
+    ]
+    utt_list.sort()
+    print("Fit standard scaler.")
+    scaler = _fit_scaler(cfg, utt_list)
+    stats_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.stats_dir)
+    os.makedirs(stats_dir, exist_ok=True)
+    joblib.dump(scaler, os.path.join(stats_dir, "stats.pkl"))
+
+
 def _extract_feature(cfg, utt_id, feat_dir, scaler, is_train):
     """Perform feature extraction.
 
@@ -187,7 +241,7 @@ def _extract_feature(cfg, utt_id, feat_dir, scaler, is_train):
             cfg.RPU.root_dir,
             cfg.RPU.data_dir,
             cfg.RPU.trainset_dir,
-            cfg.RPU.resample_trim_dir,
+            cfg.RPU.split_dir,
         )
     else:
         wav_dir = os.path.join(
@@ -232,10 +286,9 @@ def extract_feature(cfg, is_train=True):
         is_train (Bool): handling training dataset or test dataset.
     """
     dataset_dir = cfg.RPU.trainset_dir if is_train is True else cfg.RPU.evalset_dir
+    wav_dir = cfg.RPU.split_dir if is_train is True else cfg.RPU.resample_dir
     wav_list = os.listdir(
-        os.path.join(
-            cfg.RPU.root_dir, cfg.RPU.data_dir, dataset_dir, cfg.RPU.resample_dir
-        )
+        os.path.join(cfg.RPU.root_dir, cfg.RPU.data_dir, dataset_dir, wav_dir)
     )
     utt_list = [
         os.path.splitext(os.path.basename(wav_file))[0] for wav_file in wav_list
@@ -246,14 +299,9 @@ def extract_feature(cfg, is_train=True):
         cfg.RPU.root_dir, cfg.RPU.feat_dir, dataset_dir, cfg.feature.window
     )
     os.makedirs(feat_dir, exist_ok=True)
-    if is_train is True:
-        print("Fit standard scaler.")
-        scaler = _fit_scaler(cfg, utt_list)
-    else:
-        print("Load standard scaler.")
-        stats_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.stats_dir)
-        scaler = joblib.load(os.path.join(stats_dir, "stats.pkl"))
 
+    stats_dir = os.path.join(cfg.RPU.root_dir, cfg.RPU.stats_dir)
+    scaler = joblib.load(os.path.join(stats_dir, "stats.pkl"))
     print("Extract acoustic features.")
     with ProcessPoolExecutor(cfg.preprocess.n_jobs) as executor:
         futures = [
@@ -275,6 +323,8 @@ def main(cfg):
     get_basic5000_label(cfg)
     resample_wav(cfg)
     trim_silence(cfg)
+    split_utterance(cfg)
+    fit_scaler(cfg)
     extract_feature(cfg)
 
     # test data
