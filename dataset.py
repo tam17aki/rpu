@@ -68,24 +68,11 @@ def collate_fn_rpu(batch, cfg):
     Returns:
         tuple: Batch of inputs, targets, and lengths.
     """
-    lengths = [len(x[0]) for x in batch]
-    hop_length = cfg.feature.hop_length
-    sec_per_split = cfg.preprocess.sec_per_split
-    required_frames = int(
-        np.floor((cfg.feature.sample_rate * sec_per_split) // hop_length)
-    )
-    start_frames = np.array(
-        [np.random.randint(0, frames - required_frames) for frames in lengths]
-    )
     win_range = cfg.model.win_range
     win_width = 2 * win_range + 1
-
     batch_feats = {"logabs": None, "phase": None}
     for j, feat in enumerate(batch_feats.keys()):
-        batch_temp = [
-            x[j][start_frames[i] : start_frames[i] + required_frames]
-            for i, x in enumerate(batch)
-        ]
+        batch_temp = [x[j] for x in batch]
         batch_feats[feat] = torch.from_numpy(np.array(batch_temp))
         if feat == "logabs":
             batch_feats[feat] = batch_feats[feat].unfold(1, win_width, 1)
@@ -108,10 +95,7 @@ def get_dataloader(cfg):
     """
     wav_list = os.listdir(
         os.path.join(
-            cfg.RPU.root_dir,
-            cfg.RPU.data_dir,
-            cfg.RPU.trainset_dir,
-            cfg.RPU.resample_dir,
+            cfg.RPU.root_dir, cfg.RPU.data_dir, cfg.RPU.trainset_dir, cfg.RPU.split_dir
         )
     )
     utt_list = [
