@@ -66,7 +66,7 @@ def collate_fn_rpu(batch, cfg):
         cfg (DictConfig): configuration in YAML format.
 
     Returns:
-        tuple: Batch of inputs, targets, and lengths.
+        tuple: a batch of inputs and targets.
     """
     win_range = cfg.model.win_range
     win_width = 2 * win_range + 1
